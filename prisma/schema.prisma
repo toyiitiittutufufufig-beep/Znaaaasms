@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+
+enum Role {
+  ADMIN
+  USER
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum ActivationStatus {
+  WAITING
+  CODE_RECEIVED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum TxType {
+  DEPOSIT
+  ADJUSTMENT
+  PURCHASE
+  REFUND
+}
+
+
+model User {
+  id             String      @id @default(cuid())
+  username       String      @unique
+  passwordHash   String
+  role           Role        @default(USER)
+  status         UserStatus  @default(ACTIVE)
+  balance        BigInt      @default(0)
+  apiKeyHash     String      @unique
+  apiKeyEnc      String
+  apiKeyPrefix   String
+  lastLoginAt    DateTime?
+  lastActivityAt DateTime    @default(now())
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  activations    Activation[]
+  transactions   Transaction[]
+  apiLogs        ApiLog[]
+  @@index([lastActivityAt])
+}
+
+model Activation {
+  id           String           @id @default(cuid())
+  userId       String
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  providerId   String
+  service      String
+  country      String
+  phone        String
+  price        BigInt
+  status       ActivationStatus @default(WAITING)
+  smsCode      String?
+  smsText      String?
+  expiresAt    DateTime
+  source       String           @default("web")
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  transactions Transaction[]
+  @@index([userId, status])
+  @@index([status, expiresAt])
+}
+
+model Transaction {
+  id           String      @id @default(cuid())
+  userId       String
+  user         User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activationId String?
+  activation   Activation? @relation(fields: [activationId], references: [id], onDelete: SetNull)
+  type         TxType
+  amount       BigInt
+  balanceAfter BigInt
+  note         String?
+  createdAt    DateTime    @default(now())
+  @@unique([activationId, type])
+  @@index([userId, createdAt])
+}
+
+model ApiLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  endpoint   String
+  statusCode Int
+  ip         String?
+  durationMs Int
+  createdAt  DateTime @default(now())
+  @@index([userId, createdAt])
+}
+
+model ProviderLog {
+  id         String   @id @default(cuid())
+  action     String
+  ok         Boolean
+  statusCode Int?
+  latencyMs  Int
+  response   String?
+  createdAt  DateTime @default(now())
+  @@index([createdAt])
+}
+
+model Setting {
+  key   String @id
+  value String
+}
