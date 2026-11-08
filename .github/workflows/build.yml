@@ -1,0 +1,56 @@
+name: Unzip and Build
+on:
+  push:
+    paths: ["*.zip"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Unzip project
+        run: |
+          Z=$(ls *.zip 2>/dev/null | grep -v '^youssef-sms.zip$' | head -1 || true)
+          if [ -n "$Z" ]; then
+            rm -rf _tmp && unzip -q "$Z" -d _tmp
+            if [ "$(ls -A _tmp | wc -l)" = "1" ] && [ -d "_tmp/$(ls -A _tmp)" ]; then
+              cp -a "_tmp/$(ls -A _tmp)/." .
+            else
+              cp -a _tmp/. .
+            fi
+            rm -rf _tmp "$Z"
+            git config user.name "github-actions"
+            git config user.email "actions@github.com"
+            git add -A
+            git commit -m "Unzip project" || true
+            git push
+          fi
+      - run: npm install
+      - run: npm run db:push
+      - run: npm run seed
+      - run: npm run build
+      - name: Make youssef-sms.zip
+        run: |
+          B=$RUNNER_TEMP/bundle
+          mkdir -p $B/.next
+          cp -a .next/standalone/. $B/
+          cp -a .next/static $B/.next/static
+          [ -d public ] && cp -a public $B/public || true
+          mkdir -p $B/node_modules/@prisma
+          cp -a node_modules/.prisma $B/node_modules/
+          cp -a node_modules/@prisma/client $B/node_modules/@prisma/
+          rm -f $B/package.json
+          printf 'process.env.PORT = process.env.SERVER_PORT || process.env.PORT || "3000";\nprocess.env.HOSTNAME = "0.0.0.0";\nrequire("./server.js");\n' > $B/index.js
+          rm -f youssef-sms.zip
+          (cd $B && zip -qr "$GITHUB_WORKSPACE/youssef-sms.zip" .)
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add youssef-sms.zip
+          git commit -m "Add built bundle"
+          git push
